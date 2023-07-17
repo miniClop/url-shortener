@@ -88,24 +88,23 @@ func setupPrettySlog() *slog.Logger {
 	return slog.New(handler)
 }
 
-func useMiddlewares(r *chi.Mux, log *slog.Logger) {
-	r.Use(middleware.RequestID)
-	r.Use(middleware.Logger)
-	r.Use(mwLogger.New(log))
-	r.Use(middleware.Recoverer)
-	r.Use(middleware.URLFormat)
+func useMiddlewares(router *chi.Mux, log *slog.Logger) {
+	router.Use(middleware.RequestID)
+	router.Use(mwLogger.New(log))
+	router.Use(middleware.Recoverer)
+	router.Use(middleware.URLFormat)
 }
 
-func configPaths(r *chi.Mux, log *slog.Logger, storage *sqlite.Storage) {
+func configPaths(router *chi.Mux, log *slog.Logger, storage *sqlite.Storage) {
 	// TODO: abstract Storage
-	r.Route("/url", func(rr chi.Router) {
-		rr.Use(middleware.BasicAuth("url-shortener", map[string]string{
+	router.Route("/url", func(r chi.Router) {
+		r.Use(middleware.BasicAuth("url-shortener", map[string]string{
 			cfg.HTTPServer.User: cfg.HTTPServer.Password,
 		}))
 
-		rr.Post("/", save.New(log, storage))
+		r.Post("/", save.New(log, storage))
 		//TODO: Realize delete handler
 		//r.Delete("/{alias}", del.New(log, storage))
 	})
-	r.Get("/{alias}", redirect.New(log, storage))
+	router.Get("/{alias}", redirect.New(log, storage))
 }
