@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"url-shortener/internal/config"
+	"url-shortener/internal/http-server/handlers/redirect"
 	"url-shortener/internal/http-server/handlers/url/save"
 	mwLogger "url-shortener/internal/http-server/middleware/logger"
 	"url-shortener/internal/lib/logger/handlers/slogpretty"
@@ -20,10 +21,12 @@ const (
 	envProd  = "prod"
 )
 
-func main() {
-	cfg := config.MustLoad()
+var cfg *config.Config
 
-	log := setupLogger(cfg.Env)
+func main() {
+	cfg = config.MustLoad()
+
+	log := setupLogger()
 
 	log.Info("Starting url-shortener", slog.String("env", cfg.Env))
 	log.Debug("debug message are enabled")
@@ -36,8 +39,7 @@ func main() {
 
 	router := chi.NewRouter()
 	useMiddlewares(router, log)
-
-	router.Post("/url", save.New(log, storage))
+	configPaths(router, log, storage)
 
 	log.Info("starting server", slog.String("address", cfg.Address))
 
@@ -55,10 +57,10 @@ func main() {
 	log.Error("server stopped")
 }
 
-func setupLogger(env string) *slog.Logger {
+func setupLogger() *slog.Logger {
 	var log *slog.Logger
 
-	switch env {
+	switch cfg.Env {
 	case envLocal:
 		log = setupPrettySlog()
 	case envDev:
@@ -86,10 +88,24 @@ func setupPrettySlog() *slog.Logger {
 	return slog.New(handler)
 }
 
-func useMiddlewares(router *chi.Mux, log *slog.Logger) {
-	router.Use(middleware.RequestID)
-	router.Use(middleware.Logger)
-	router.Use(mwLogger.New(log))
-	router.Use(middleware.Recoverer)
-	router.Use(middleware.URLFormat)
+func useMiddlewares(r *chi.Mux, log *slog.Logger) {
+	r.Use(middleware.RequestID)
+	r.Use(middleware.Logger)
+	r.Use(mwLogger.New(log))
+	r.Use(middleware.Recoverer)
+	r.Use(middleware.URLFormat)
+}
+
+func configPaths(r *chi.Mux, log *slog.Logger, storage *sqlite.Storage) {
+	// TODO: abstract Storage
+	r.Route("/url", func(rr chi.Router) {
+		rr.Use(middleware.BasicAuth("url-shortener", map[string]string{
+			cfg.HTTPServer.User: cfg.HTTPServer.Password,
+		}))
+
+		rr.Post("/", save.New(log, storage))
+		//TODO: Realize delete handler
+		//r.Delete("/{alias}", del.New(log, storage))
+	})
+	r.Get("/{alias}", redirect.New(log, storage))
 }
